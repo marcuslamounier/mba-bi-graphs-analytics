@@ -1,4 +1,4 @@
-id_cidade,nm_cidade,nm_estado,nm_pais,ds_regiao_estrategia
+"id_cidade","nm_cidade","nm_estado","nm_pais","ds_regiao_estrategia"
 "CID1","São Paulo","SP","Brasil","SP"
 "CID2","Rio de Janeiro","RJ","Brasil","Sudeste"
 "CID3","Belo Horizonte","MG","Brasil","Sudeste"
