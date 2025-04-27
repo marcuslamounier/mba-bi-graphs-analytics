@@ -1,4 +1,4 @@
-"id_cliente","nm_fantasia","qt_funcionarios","ds_porte","id_cidade_sede","dt_contratacao","id_setor"
+id_cliente,nm_fantasia,qt_funcionarios,ds_porte,id_cidade_sede,dt_contratacao,id_setor
 "C001","TechVida Solutions","150","Médio","CID1","2025-01-15","S1"
 "C002","CorpFin Group","400","Grande","CID2",null,"S2"
 "C003","InovaManufatura","200","Médio","CID3","2024-12-01","S3"
