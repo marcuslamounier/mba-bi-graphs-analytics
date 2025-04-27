@@ -17,6 +17,19 @@ Este trabalho propõe um modelo conceitual de banco de dados de grafo utilizando
 
 ## Planejamento
 
+### Modelo Conceitual
+
+| **Elemento** | **Tipo**       | **Descrição**                                    |
+|--------------|----------------|--------------------------------------------------|
+| Cliente      | Nó             | Representa uma empresa cliente da VitalMind      |
+| Setor        | Nó             | Representa o setor de atuação da empresa         |
+| Produto      | Nó             | Representa os produtos/serviços da VitalMind     |
+| Cidade       | Nó             | Representa a localização geográfica do cliente   |
+| PERTENCE_A   | Relacionamento | Indica o setor de atuação do cliente             |
+| CONTRATA     | Relacionamento | Indica quais produtos o cliente contratou        |
+| SEDE_EM      | Relacionamento | Indica a localização geográfica do cliente       |
+| SIMILAR_A    | Relacionamento | Conecta clientes com características semelhantes |
+
 ### Entidades
 
 #### Clientes
@@ -81,282 +94,117 @@ Propriedades:
 
 ## Execução e implementação
 
-Para a implementação do modelo, foi criado um projeto do tipo “Blank Sandbox – Graph Data Science” na _sandbox_ do neo4j. No terminal executado via browser, foram executadas algumas linhas de código para a modelagem.
+### Criação de projeto
+
+Para a implementação do modelo, foi criado um projeto do tipo “Blank Sandbox – Graph Data Science” na _sandbox_ do neo4j.
+
+### Importação dos dados
+
+Para importação dos dados, foi utilizado o **neo4j Data Importer**.
+
+![Importação dos dados](resources/data_import.png "Importação dos dados")
+
+### Criação dos relacionamentos restantes
+
+Para a criação dos demais relacionamentos, foi utilizado o terminal via browser. Seguem comandos _cypher_.
 
 ```cql
-// 1. Criar Constraints
-CREATE CONSTRAINT IF NOT EXISTS FOR (c:Cliente) REQUIRE c.id_cliente IS UNIQUE;
-CREATE CONSTRAINT IF NOT EXISTS FOR (s:Setor) REQUIRE s.id_setor IS UNIQUE;
-CREATE CONSTRAINT IF NOT EXISTS FOR (p:Produto) REQUIRE p.id_produto IS UNIQUE;
-CREATE CONSTRAINT IF NOT EXISTS FOR (ci:Cidade) REQUIRE ci.id_cidade IS UNIQUE;
-
-// 2. Criar Setores
-CREATE (:Setor {id_setor: "S1", nm_setor: "Tecnologia", ds_regulamentacao: "Média"});
-CREATE (:Setor {id_setor: "S2", nm_setor: "Finanças", ds_regulamentacao: "Alta"});
-CREATE (:Setor {id_setor: "S3", nm_setor: "Manufatura", ds_regulamentacao: "Baixa"});
-CREATE (:Setor {id_setor: "S4", nm_setor: "Saúde", ds_regulamentacao: "Alta"});
-CREATE (:Setor {id_setor: "S5", nm_setor: "Varejo", ds_regulamentacao: "Média"});
-CREATE (:Setor {id_setor: "S6", nm_setor: "Serviços", ds_regulamentacao: "Baixa"});
-
-// 3. Criar Produtos
-CREATE (:Produto {id_produto: "P1", nm_produto: "Assinatura Plataforma", ds_tipo: "Assinatura", vl_preco_base: 2000.0});
-CREATE (:Produto {id_produto: "P2", nm_produto: "Relatórios Personalizados", ds_tipo: "Relatório", vl_preco_base: 5000.0});
-CREATE (:Produto {id_produto: "P3", nm_produto: "Treinamentos e Eventos", ds_tipo: "Treinamento", vl_preco_base: 10000.0});
-
-// 4. Importar Cidades
-LOAD CSV WITH HEADERS FROM 'https://github.com/marcuslamounier/mba-bi-graphs-analytics/blob/main/data/cidades_vitalmind.csv' AS row
-MERGE (ci:Cidade {id_cidade: row.id_cidade})
-SET ci.nm_cidade = row.nm_cidade,
-    ci.nm_estado = row.nm_estado,
-    ci.nm_pais = row.nm_pais,
-    ci.ds_regiao_estrategia = row.ds_regiao_estrategia
-MERGE (e:Cidade {id_cidade: 'EST_' + row.nm_estado, nm_cidade: row.nm_estado, nm_estado: row.nm_estado, nm_pais: row.nm_pais, ds_regiao_estrategia: row.ds_regiao_estrategia})
+// 1. Create PAIS_Brasil Node and State-to-Country LOCALIZADA_EM Relationships
 MERGE (p:Cidade {id_cidade: 'PAIS_Brasil', nm_cidade: 'Brasil', nm_estado: '', nm_pais: 'Brasil', ds_regiao_estrategia: 'LATAM'})
-MERGE (ci)-[:LOCALIZADA_EM]->(e)
+WITH p
+MATCH (e:Cidade)
+WHERE e.id_cidade STARTS WITH 'EST_'
 MERGE (e)-[:LOCALIZADA_EM]->(p);
 
-// 5. Importar Clientes e Relacionamentos PERTENCE_A e SEDE_EM
-LOAD CSV WITH HEADERS FROM 'https://github.com/marcuslamounier/mba-bi-graphs-analytics/blob/main/data/potenciais_clientes_vitalmind_novo_completo.csv' AS row
-MERGE (c:Cliente {id_cliente: row.id_cliente})
-SET c.nm_fantasia = row.nm_fantasia,
-    c.qt_funcionarios = toInteger(row.qt_funcionarios),
-    c.ds_porte = row.ds_porte,
-    c.id_cidade_sede = row.id_cidade_sede,
-    c.dt_contratacao = CASE row.dt_contratacao WHEN '' THEN null ELSE date(row.dt_contratacao) END
-MERGE (s:Setor {id_setor: row.id_setor})
-MERGE (ci:Cidade {id_cidade: row.id_cidade_sede})
-MERGE (c)-[:PERTENCE_A]->(s)
-MERGE (c)-[:SEDE_EM]->(ci);
+// 2. Create CONTRATA Relationships
+// P1: Assinatura Plataforma (100% of clients with non-null dt_contratacao)
+MATCH (c:Cliente)
+WHERE c.dt_contratacao IS NOT NULL
+MATCH (p1:Produto {id_produto: "P1"})
+MERGE (c)-[:CONTRATA {dt_inicio: c.dt_contratacao, ds_frequencia: "Mensal", vl_contrato: 2000.0}]->(p1);
 
-// 6. Criar Relacionamentos CONTRATA (para clientes com dt_contratacao não nulo)
-LOAD CSV WITH HEADERS FROM 'file:///potenciais_clientes_vitalmind_novo_completo.csv' AS row
-MATCH (c:Cliente {id_cliente: row.id_cliente})
-WHERE row.dt_contratacao IS NOT NULL
-MATCH (p1:Produto {id_produto: "P1"}) // Assinatura Plataforma
-MERGE (c)-[:CONTRATA {dt_inicio: date(row.dt_contratacao), ds_frequencia: "Mensal", vl_contrato: 2000.0}]->(p1)
-WITH c, row
-WHERE rand() < 0.2 // 20% também contratam Relatórios
+// P2: Relatórios Personalizados (20% of clients with non-null dt_contratacao)
+MATCH (c:Cliente)
+WHERE c.dt_contratacao IS NOT NULL
+WITH c, rand() AS r
+WHERE r < 0.2
 MATCH (p2:Produto {id_produto: "P2"})
-MERGE (c)-[:CONTRATA {dt_inicio: date(row.dt_contratacao), ds_frequencia: "Trimestral", vl_contrato: 5000.0}]->(p2)
-WITH c, row
-WHERE rand() < 0.1 // 10% também contratam Treinamentos
-MATCH (p3:Produto {id_produto: "P3"})
-MERGE (c)-[:CONTRATA {dt_inicio: date(row.dt_contratacao), ds_frequencia: "Semestral", vl_contrato: 10000.0}]->(p3);
+MERGE (c)-[:CONTRATA {dt_inicio: c.dt_contratacao, ds_frequencia: "Trimestral", vl_contrato: 5000.0}]->(p2);
 
-// 7. Criar Relacionamentos SIMILAR_A (10% dos clientes, mesmo setor e porte)
+// P3: Treinamentos e Eventos (10% of clients with non-null dt_contratacao)
+MATCH (c:Cliente)
+WHERE c.dt_contratacao IS NOT NULL
+WITH c, rand() AS r
+WHERE r < 0.1
+MATCH (p3:Produto {id_produto: "P3"})
+MERGE (c)-[:CONTRATA {dt_inicio: c.dt_contratacao, ds_frequencia: "Semestral", vl_contrato: 10000.0}]->(p3);
+
+// 3. Create SIMILAR_A Relationships (10% of pairs, same sector and size)
 MATCH (c1:Cliente)
 MATCH (c2:Cliente)
-WHERE c1.id_cliente < c2.id_cliente // Evitar duplicatas
+WHERE c1.id_cliente < c2.id_cliente // Avoid duplicates
 AND c1.ds_porte = c2.ds_porte
-AND c1.id_cliente IN (
-    MATCH (c:Cliente)-[:PERTENCE_A]->(s:Setor)
-    WHERE c.id_cliente = c1.id_cliente
-    MATCH (c2:Cliente)-[:PERTENCE_A]->(s2:Setor)
-    WHERE c2.id_cliente = c2.id_cliente AND s.id_setor = s2.id_setor
-    RETURN c1.id_cliente
-)
-AND rand() < 0.1 // 10% de chance
-MERGE (c1)-[:SIMILAR_A {vl_similaridade: 0.6 + rand() * 0.3}]->(c2); // Similaridade entre 0.6 e 0.9
+AND EXISTS {
+    MATCH (c1)-[:PERTENCE_A]->(s:Setor)
+    MATCH (c2)-[:PERTENCE_A]->(s2:Setor)
+    WHERE s.id_setor = s2.id_setor
+}
+AND rand() < 0.1 // 10% chance
+MERGE (c1)-[:SIMILAR_A {vl_similaridade: 0.6 + rand() * 0.3}]->(c2);
 ```
 
-**_Criação das constantes para entidades_**
+## Análise
 
-CREATE CONSTRAINT IF NOT EXISTS FOR (c:Cliente) REQUIRE c.id_cliente IS UNIQUE;
+### Validação das inclusões de dados
 
-CREATE CONSTRAINT IF NOT EXISTS FOR (s:Setor) REQUIRE s.id_setor IS UNIQUE;
+Para testar se os dados foram corretamente inseridos, foram testados os comandos abaixo:
 
-CREATE CONSTRAINT IF NOT EXISTS FOR (p:Produto) REQUIRE p.id_produto IS UNIQUE;
+```cql
+// Node counts
+MATCH (c:Cliente) RETURN COUNT(c); // 300
+MATCH (ci:Cidade) RETURN COUNT(ci); // ~50 (28 cities + states + PAIS_Brasil)
+MATCH (s:Setor) RETURN COUNT(s); // 6
+MATCH (p:Produto) RETURN COUNT(p); // 3
 
-CREATE CONSTRAINT IF NOT EXISTS FOR (ci:Cidade) REQUIRE ci.id_cidade IS UNIQUE;
+// Relationship counts
+MATCH ()-[:PERTENCE_A]->() RETURN COUNT(*); // 300
+MATCH ()-[:SEDE_EM]->() RETURN COUNT(*); // 300
+MATCH ()-[:CONTRATA]->() RETURN COUNT(*); // ~117 (90 P1 + ~18 P2 + ~9 P3)
+MATCH ()-[:SIMILAR_A]->() RETURN COUNT(*); // ~900 (varies with rand())
+MATCH ()-[:LOCALIZADA_EM]->() RETURN COUNT(*); // ~50 (28 city-to-state + state-to-country)
 
-**_Inclusão de dados para as entidades Setores e Produtos_**
+// Sample visualization
+MATCH (c:Cliente)-[:PERTENCE_A]->(s:Setor), (c)-[:SEDE_EM]->(ci:Cidade)
+WHERE c.id_cliente IN ["C001", "C002", "C003"]
+RETURN c, s, ci;
+```
 
-// Criar Setores
+### Visualização do modelo
 
-CREATE (:Setor {id_setor: "S1", nm_setor: "Tecnologia", ds_regulamentacao: "Média"});
+![Visualização do modelo](resources/schema_viz.png "Visualização do modelo")
 
-CREATE (:Setor {id_setor: "S2", nm_setor: "Finanças", ds_regulamentacao: "Alta"});
+## Resultados e Conclusões
 
-CREATE (:Setor {id_setor: "S3", nm_setor: "Manufatura", ds_regulamentacao: "Baixa"});
+Bancos de dados de grafo, como o Neo4j, são particularmente adequados para modelar relações complexas entre entidades, como clientes, produtos e localizações geográficas. Além disso, traz ganhos práticos e eficientes como a visualização das relações, comunidades, similaridade etc.
 
-// Criar Produtos
+**Clientes potenciais por cidade:**
 
-CREATE (:Produto {id_produto: "P1", nm_produto: "Assinatura Plataforma", ds_tipo: "Assinatura", vl_preco_base: 2000.0});
+![Visualização de clientes potenciais](resources/cidade_sede_em.png "Clientes potenciais")
 
-CREATE (:Produto {id_produto: "P2", nm_produto: "Relatórios Personalizados", ds_tipo: "Relatório", vl_preco_base: 5000.0});
+![Clientes potenciais por cidade](resources/potenciais_clientes.png "Clientes potenciais por cidade")
 
-CREATE (:Produto {id_produto: "P3", nm_produto: "Treinamentos e Eventos", ds_tipo: "Treinamento", vl_preco_base: 10000.0});
+**Grandes clientes potenciais por setor:**
 
-**_Inclusão de dados para cidades_**
+![Clientes potenciais por cidade](resources/clientes_grandes_por_setor.png "Clientes potenciais por cidade")
 
-// Hierarquia Geográfica
+![Clientes potenciais por cidade](resources/clientes_grandes_por_setor_zoom.png "Clientes potenciais por cidade")
 
-MATCH (ci1:Cidade {id_cidade: "CID1"}), (ci3:Cidade {id_cidade: "CID3"})
+**Clientes que contrataram produto de _Assinatura_:**
 
-CREATE (ci1)-\[:LOCALIZADA_EM\]->(ci3);
+![Clientes de Assinatura](resources/clientes_assinatura.png "Clientes de Assinatura")
 
-MATCH (ci2:Cidade {id_cidade: "CID2"}), (ci3:Cidade {id_cidade: "CID3"})
+**Similaridade entre clientes:**
 
-CREATE (ci2)-\[:LOCALIZADA_EM\]->(ci3);
+![Similaridade entre clientes](resources/similaridade_clientes.png "Similaridade entre clientes")
 
-**_Inclusão de dados para clientes_**
-
-// Hierarquia Geográfica
-
-MATCH (ci1:Cidade {id_cidade: "CID1"}), (ci3:Cidade {id_cidade: "CID3"})
-
-CREATE (ci1)-\[:LOCALIZADA_EM\]->(ci3);
-
-MATCH (ci2:Cidade {id_cidade: "CID2"}), (ci3:Cidade {id_cidade: "CID3"})
-
-CREATE (ci2)-\[:LOCALIZADA_EM\]->(ci3);
-
-crescente demanda por soluções de bem-estar no ambiente corporativo tem impulsionado o surgimento de startups SaaS (Software as a Service) voltadas para saúde mental. A VitalMind é uma dessas empresas, oferecendo uma plataforma de monitoramento preditivo, relatórios personalizados e treinamentos corporativos. Para competir em um mercado dinâmico, a segmentação eficaz de clientes é essencial, permitindo a personalização de serviços e a otimização de estratégias de marketing.
-
-Bancos de dados de grafo, como o Neo4j, são particularmente adequados para modelar relações complexas entre entidades, como clientes, produtos e localizações geográficas. Este trabalho propõe um modelo conceitual em Neo4j para a VitalMind, com foco na segmentação de clientes por tamanho, setor e região. A pesquisa é guiada pela seguinte questão: _Como um modelo de grafo pode suportar a segmentação de clientes em uma startup SaaS de saúde mental corporativa?_
-
-O artigo está organizado da seguinte forma: a Seção 2 descreve o conceito da VitalMind; a Seção 3 detalha a metodologia de modelagem; a Seção 4 apresenta o modelo conceitual e sua implementação; a Seção 5 discute os resultados; a Seção 6 conclui o trabalho; e a Seção 7 lista as referências.
-
-**2.2. Relevância Estratégica**
-
-A segmentação de clientes é crítica para a VitalMind, pois permite personalizar ofertas, otimizar campanhas de marketing e identificar oportunidades de cross-selling. Um modelo de dados que represente essas relações complexas pode suportar decisões estratégicas, como direcionar treinamentos para setores específicos ou expandir para novas regiões.
-
-**3\. Metodologia**
-
-A metodologia combina análise do contexto de negócio da VitalMind com técnicas de modelagem de dados em grafo. As etapas incluem:
-
-1. **Análise do Negócio**: Identificação dos segmentos de clientes, produtos e interações com base em documentos internos da VitalMind (Canvas de Negócio e análise de concorrência).
-2. **Definição do Modelo Conceitual**: Criação de nós (entidades) e relacionamentos para representar clientes, setores, produtos e regiões, seguindo as boas práticas de modelagem em Neo4j ().
-3. **Implementação**: Desenvolvimento de um esquema em Cypher, com exemplos de nós e relacionamentos, e geração de uma lista fictícia de 300 potenciais clientes em cidades brasileiras.
-4. **Validação**: Proposição de consultas Cypher para verificar a funcionalidade do modelo, como análises de segmentação e identificação de padrões.
-
-Os dados de clientes foram gerados de forma fictícia, mas baseados em distribuições realistas de setores e cidades, utilizando fontes como o IBGE () e relatórios de mercado (,).
-
-**4\. Modelagem de Dados em Neo4j**
-
-**4.1. Modelo Conceitual**
-
-O modelo conceitual foi projetado para representar os segmentos de clientes da VitalMind e suas interações com produtos e localizações. Os elementos principais são:
-
-**Nós**
-
-- **Cliente**: Representa uma empresa cliente.
-  - Propriedades: id (string), nome (string), tamanho (int), segmento_tamanho (string: "Médio" ou "Grande"), localizacao (string), data_contratacao (date).
-- **Setor**: Representa o setor de atuação (ex.: Tecnologia, Finanças).
-  - Propriedades: nome (string), regulamentacao (string: "Alta", "Média", "Baixa").
-- **Produto**: Representa os serviços da VitalMind.
-  - Propriedades: id (string), nome (string), tipo (string: "Assinatura", "Relatório", "Treinamento"), preco_base (float).
-- **Regiao**: Representa localizações geográficas.
-  - Propriedades: nome (string), tipo (string: "Cidade", "Estado", "País", "Continente").
-
-**Relacionamentos**
-
-- **(:Cliente)-\[:PERTENCE_A\]->(:Setor)**: Indica o setor da empresa.
-- **(:Cliente)-\[:USA {data_inicio, frequencia, valor_contrato}\]->(:Produto)**: Representa a contratação de produtos.
-- **(:Cliente)-\[:LOCALIZADO_EM\]->(:Regiao)**: Associa o cliente a uma região.
-- **(:Regiao)-\[:CONTEM\]->(:Regiao)**: Modela a hierarquia geográfica (ex.: São Paulo contém Brasil).
-- **(:Cliente)-\[:SIMILAR_A {similaridade}\]->(:Cliente)**: Conecta clientes com características semelhantes.
-
-**Diagrama**
-
-(Cliente)-\[:PERTENCE_A\]->(Setor)
-
-(Cliente)-\[:USA {data_inicio, frequencia, valor_contrato}\]->(Produto)
-
-(Cliente)-\[:LOCALIZADO_EM\]->(Regiao)
-
-(Regiao)-\[:CONTEM\]->(Regiao)
-
-(Cliente)-\[:SIMILAR_A {similaridade}\]->(Cliente)
-
-**4.2. Implementação**
-
-O modelo foi implementado em Cypher, com constraints para garantir unicidade e exemplos de nós e relacionamentos. Abaixo, um trecho do código:
-
-CREATE CONSTRAINT IF NOT EXISTS FOR (c:Cliente) REQUIRE c.id IS UNIQUE;
-
-CREATE CONSTRAINT IF NOT EXISTS FOR (p:Produto) REQUIRE p.id IS UNIQUE;
-
-CREATE CONSTRAINT IF NOT EXISTS FOR (s:Setor) REQUIRE s.nome IS UNIQUE;
-
-CREATE CONSTRAINT IF NOT EXISTS FOR (r:Regiao) REQUIRE r.nome IS UNIQUE;
-
-// Exemplo de Nós
-
-CREATE (:Setor {nome: "Tecnologia", regulamentacao: "Média"});
-
-CREATE (:Produto {id: "P1", nome: "Assinatura Plataforma", tipo: "Assinatura", preco_base: 2000.0});
-
-CREATE (:Regiao {nome: "São Paulo", tipo: "Cidade"});
-
-CREATE (:Cliente {id: "C1", nome: "TechCorp", tamanho: 200, segmento_tamanho: "Médio", localizacao: "São Paulo", data_contratacao: date("2025-01-01")});
-
-// Exemplo de Relacionamentos
-
-MATCH (c:Cliente {id: "C1"}), (s:Setor {nome: "Tecnologia"}) CREATE (c)-\[:PERTENCE_A\]->(s);
-
-MATCH (c:Cliente {id: "C1"}), (p:Produto {id: "P1"}) CREATE (c)-\[:USA {data_inicio: date("2025-01-01"), frequencia: "Mensal", valor_contrato: 2000.0}\]->(p);
-
-MATCH (c:Cliente {id: "C1"}), (r:Regiao {nome: "São Paulo"}) CREATE (c)-\[:LOCALIZADO_EM\]->(r);
-
-**4.3. Dados de Clientes**
-
-Para testar o modelo, foi gerada uma lista fictícia de 300 potenciais clientes em cidades brasileiras de médio e grande porte (ex.: São Paulo, Recife, Joinville). A distribuição considera:
-
-- **Regiões**: 50% Sudeste, 20% Sul, 20% Nordeste, 10% Centro-Oeste/Norte.
-- **Setores**: Tecnologia (30%), Finanças (20%), Manufatura (20%), Saúde (15%), Varejo (10%), Serviços (5%).
-- **Tamanho**: 60% médio porte, 40% grande porte.
-
-Exemplo de trecho do CSV gerado:
-
-id,nome,tamanho,segmento_tamanho,setor,cidade,estado,data_contratacao
-
-C001,TechVida Solutions,150,Médio,Tecnologia,São Paulo,SP,2025-01-15
-
-C002,CorpFin Group,400,Grande,Finanças,Rio de Janeiro,RJ,null
-
-C003,InovaManufatura,200,Médio,Manufatura,Belo Horizonte,MG,2024-12-01
-
-O CSV completo foi projetado para importação no Neo4j, com comando como:
-
-LOAD CSV WITH HEADERS FROM 'file:///potenciais_clientes_vitalmind.csv' AS row
-
-MERGE (c:Cliente {id: row.id})
-
-SET c.nome = row.nome, c.tamanho = toInteger(row.tamanho), c.segmento_tamanho = row.segmento_tamanho
-
-MERGE (s:Setor {nome: row.setor})
-
-MERGE (c)-\[:PERTENCE_A\]->(s);
-
-**5\. Resultados e Discussão**
-
-O modelo conceitual proposto permite segmentar clientes da VitalMind de forma eficiente, suportando análises como:
-
-- **Distribuição por Setor**: Consultas Cypher podem identificar quais setores (ex.: Tecnologia) contratam mais produtos, como:
-- MATCH (c:Cliente)-\[:PERTENCE_A\]->(s:Setor), (c)-\[:USA\]->(p:Produto)
-- RETURN s.nome, p.nome, COUNT(\*) AS total ORDER BY total DESC;
-- **Padrões Geográficos**: A hierarquia de regiões facilita análises regionais (ex.: clientes em São Paulo vs. Recife).
-- **Recomendações**: O relacionamento SIMILAR_A suporta estratégias de cross-selling, como recomendar relatórios para clientes de Finanças que já usam a plataforma.
-
-A lista de 300 clientes fictícios reflete a realidade econômica brasileira, com maior concentração no Sudeste (50%) devido à densidade de empresas (). A flexibilidade do modelo permite expansão para novos setores, produtos ou regiões, como a América Latina, planejada pela VitalMind.
-
-**5.1. Limitações**
-
-- **Dados Fictícios**: A ausência de dados reais limita a validação prática do modelo. Dados de fontes como Crunchbase () poderiam enriquecer a análise.
-- **Complexidade**: Relacionamentos como SIMILAR_A exigem algoritmos de similaridade (ex.: baseados em machine learning) para valores precisos, não implementados aqui.
-- **Escopo**: O modelo foca em segmentação estática, sem considerar dinâmicas temporais (ex.: churn de clientes).
-
-**6\. Conclusão**
-
-Este trabalho apresentou o conceito da VitalMind, uma startup SaaS de saúde mental corporativa, e desenvolveu um modelo conceitual em Neo4j para segmentação de clientes. O modelo, baseado em nós (Cliente, Setor, Produto, Regiao) e relacionamentos (PERTENCE_A, USA, LOCALIZADO_EM, CONTEM, SIMILAR_A), oferece uma estrutura robusta para análises estratégicas. A geração de 300 potenciais clientes fictícios demonstrou a aplicabilidade do modelo em um contexto brasileiro, com potencial para suportar decisões de marketing e expansão.
-
-Futuros trabalhos podem incorporar dados reais, expandir o modelo para incluir dinâmicas de interação com colaboradores ou integrar algoritmos de recomendação. A abordagem de grafos se mostra promissora para startups SaaS, especialmente em mercados competitivos como o de saúde mental corporativa.
-
-**7\. Referências**
-
-1. IBGE. (2023). _Estimativas da População_. Disponível em: [https://www.ibge.gov.br](https://www.ibge.gov.br/).
-2. Gartner. (2024). _Forecast: Enterprise Software Markets, Worldwide_. Disponível em: [https://www.gartner.com](https://www.gartner.com/).
-3. Crunchbase. (2025). _Database of Companies and Startups_. Disponível em: [https://www.crunchbase.com](https://www.crunchbase.com/).
-4. Neo4j. (2024). _Graph Data Modeling Guidelines_. Disponível em: <https://neo4j.com/developer/graph-modeling>.
-5. SEBRAE. (2023). _Panorama das Startups no Brasil_. Disponível em: [https://www.sebrae.com.br](https://www.sebrae.com.br/).
+Por fim, conclui-se que a utilização do banco de dados de grafos Neo4j para modelar e analisar relações entre clientes, cidades, setores e produtos da Vitalmind, demonstrou benefícios significativos para a inteligência de negócios, revelando padrões complexos de forma eficiente e visualmente acessível com o Neo4j Bloom. A estrutura flexível do grafo, aliada à integração robusta de dados via Data Importer e consultas Cypher, permitiu insights estratégicos, como segmentação de clientes por similaridade e otimização de portfólio de produtos, fortalecendo a tomada de decisão e pavimentando o caminho para análises preditivas e personalização em larga escala.
